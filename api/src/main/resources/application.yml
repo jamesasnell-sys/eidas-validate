@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: eidas-validate
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
+
+server:
+  port: ${PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+eidas:
+  # Trusted list cache is refreshed on a schedule; results state their own
+  # freshness rather than assuming it.
+  cache:
+    max-age: PT12H
+    directory: ${TSL_CACHE_DIR:/tmp/eidas-validate-tsl}
