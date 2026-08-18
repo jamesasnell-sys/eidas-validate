@@ -76,6 +76,14 @@ trusted list's own XML signature, establishing each list's authenticity through
 the Commission's List of Trusted Lists, and determining status at a point in
 the past rather than now.
 
+## Availability
+
+Hosted on Render's free tier, which suspends the service after fifteen minutes
+without a request. A request arriving while it is suspended can take up to
+about two minutes to return, while the instance restarts. This is a hosting
+characteristic, not a fault in the validation itself, and it will be removed
+once there is enough traffic to justify a paid instance.
+
 ## Structure
 
 | Module | Contents |
