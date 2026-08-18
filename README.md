@@ -76,6 +76,39 @@ trusted list's own XML signature, establishing each list's authenticity through
 the Commission's List of Trusted Lists, and determining status at a point in
 the past rather than now.
 
+## Using it
+
+One endpoint. Send the timestamp token and, if you want the message imprint
+checked, a digest you computed yourself:
+
+```
+POST /api/v1/validate
+Content-Type: application/json
+
+{
+  "token": "<base64 DER-encoded RFC 3161 token>",
+  "digest": "<base64 digest of the document>",
+  "digestAlgorithm": "SHA-256"
+}
+```
+
+`digest` and `digestAlgorithm` are optional together. Without them the token is
+still checked, and the message imprint is reported indeterminate rather than
+skipped quietly.
+
+There is no field for the document itself. The digest is computed on your side,
+so the document never reaches this service, which is the only way a promise not
+to retain it can mean anything.
+
+The response separates what the token is from what the issuing authority is,
+and reports each check as valid, invalid or indeterminate. A token forged by
+someone running their own timestamp authority will show a valid signature — only
+the trust assessment distinguishes it, which is why the two are never merged.
+
+Requests are limited by origin rather than by account, at thirty a minute.
+Beyond that the service returns 429 with a `Retry-After` header. Anyone who
+needs more can run their own instance.
+
 ## Availability
 
 Hosted on Render's free tier, which suspends the service after fifteen minutes
@@ -101,8 +134,20 @@ mvn clean test
 
 ## Status
 
-Early. The vocabulary and interfaces are settled; the DSS wiring is in progress.
-Not yet suitable for reliance.
+Early, and not yet suitable for reliance.
+
+The DSS wiring is complete and the validation path works end to end: token
+signature, message imprint, certificate validity at the time of stamping, and
+qualification established through the trusted lists with the list signatures
+themselves verified against the certificates published in the Official Journal.
+
+What is still missing before this should be relied on: it has not been checked
+against a token from a qualified EU authority, only against tokens from
+authorities outside the trusted lists, so the qualified path is exercised by the
+list data rather than by a real qualified token. There are no fixtures yet for
+historic tokens issued before a signing certificate was rotated. The recognised
+anchor set is empty, so tokens from FreeTSA and the commercial authorities are
+currently reported unknown rather than recognised.
 
 ## Licence
 

@@ -21,3 +21,14 @@ eidas:
   cache:
     max-age: PT12H
     directory: ${TSL_CACHE_DIR:/tmp/eidas-validate-tsl}
+
+  # Public and unauthenticated, so the limit is applied per origin. Generous
+  # enough that a person checking tokens by hand will not meet it.
+  rate-limit:
+    requests: 30
+    window: PT1M
+    max-tracked-callers: 10000
+    # Must be true wherever a reverse proxy fronts this service, as on Render.
+    # Left false by default: trusting X-Forwarded-For when nothing sets it lets
+    # a caller forge an origin per request and evade the limit entirely.
+    behind-proxy: ${BEHIND_PROXY:false}
