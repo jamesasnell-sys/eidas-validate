@@ -197,9 +197,29 @@ public class DssTimestampValidator implements TimestampValidator {
             }
         }
 
-        if (!trustedLists.isLoaded()) {
+        // Signature intactness and message-imprint matching are properties of
+        // the token and the document alone. They do not depend on trusted list
+        // data, so validateDocument runs whether or not lists are loaded — DSS
+        // populates those checks during it, and skipping it (as an earlier
+        // version did when lists were absent) left a genuine token reporting
+        // its own signature INVALID. When lists are loaded, the trusted source
+        // is attached first so the same pass can also reach a trust verdict.
+        boolean listsLoaded = trustedLists.isLoaded();
+        if (listsLoaded) {
+            verifier.setTrustedCertSources(trustedLists.certificateSource());
+        } else {
             notes.add("No trusted list data is loaded, so no qualification determination "
-                    + "was attempted.");
+                    + "was attempted. The token's own signature and message imprint are "
+                    + "still checked.");
+        }
+        validator.setValidationTime(Date.from(assessmentTime));
+
+        Reports reports;
+        try {
+            reports = validator.validateDocument();
+        } catch (Exception e) {
+            log.debug("DSS validation failed", e);
+            notes.add("The validation process did not complete.");
             return new TimestampValidationResult(
                     genTime,
                     tokenCheck(parsed, imprintChecked),
@@ -209,15 +229,10 @@ public class DssTimestampValidator implements TimestampValidator {
                     List.copyOf(notes));
         }
 
-        verifier.setTrustedCertSources(trustedLists.certificateSource());
-        validator.setValidationTime(Date.from(assessmentTime));
-
-        Reports reports;
-        try {
-            reports = validator.validateDocument();
-        } catch (Exception e) {
-            log.debug("DSS validation failed", e);
-            notes.add("The validation process did not complete.");
+        if (!listsLoaded) {
+            // Signature and imprint have now been evaluated; trust has not,
+            // because there was nothing to anchor it to. Report the token
+            // checks honestly and leave trust unknown.
             return new TimestampValidationResult(
                     genTime,
                     tokenCheck(parsed, imprintChecked),
