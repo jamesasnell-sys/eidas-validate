@@ -77,7 +77,11 @@ public class DssTimestampValidator implements TimestampValidator {
             return null;
         }
         try {
-            DigestAlgorithm algorithm = DigestAlgorithm.forName(digestAlgorithm.trim().toUpperCase());
+            DigestAlgorithm algorithm = parseDigestAlgorithm(digestAlgorithm);
+            if (algorithm == null) {
+                log.debug("Unrecognised digest algorithm: {}", digestAlgorithm);
+                return null;
+            }
             int expectedBytes = digestBytes(algorithm);
             if (expectedBytes < 0 || digest.length != expectedBytes) {
                 return null;
@@ -87,6 +91,33 @@ public class DssTimestampValidator implements TimestampValidator {
             log.debug("Unrecognised digest algorithm: {}", digestAlgorithm);
             return null;
         }
+    }
+
+    /**
+     * Resolve an algorithm name to a DSS {@link DigestAlgorithm}, accepting the
+     * everyday spellings callers actually send.
+     *
+     * <p>DSS names its constants without separators (SHA256, SHA3-256's constant
+     * is SHA3_256), but a browser or a person will send "SHA-256", "sha256", or
+     * "SHA-3-256". DSS's own {@code forName} rejects the hyphenated forms, which
+     * would silently push a well-formed digest request onto the "no document"
+     * path and report it INDETERMINATE. Normalising here is the difference
+     * between the digest path working and appearing to do nothing.
+     */
+    private static DigestAlgorithm parseDigestAlgorithm(String name) {
+        String cleaned = name.trim().toUpperCase().replace("-", "").replace("_", "").replace(" ", "");
+        return switch (cleaned) {
+            case "SHA1" -> DigestAlgorithm.SHA1;
+            case "SHA224" -> DigestAlgorithm.SHA224;
+            case "SHA256" -> DigestAlgorithm.SHA256;
+            case "SHA384" -> DigestAlgorithm.SHA384;
+            case "SHA512" -> DigestAlgorithm.SHA512;
+            case "SHA3224" -> DigestAlgorithm.SHA3_224;
+            case "SHA3256" -> DigestAlgorithm.SHA3_256;
+            case "SHA3384" -> DigestAlgorithm.SHA3_384;
+            case "SHA3512" -> DigestAlgorithm.SHA3_512;
+            default -> null;
+        };
     }
 
     /** Digest length in bytes, or -1 where the algorithm has no fixed length. */
@@ -113,11 +144,18 @@ public class DssTimestampValidator implements TimestampValidator {
             return unableToDetermine(null, notes, "No timestamp token supplied.");
         }
 
+        // DSS's DetachedTimestampValidator requires a CertificateVerifier to be
+        // set before the token can be parsed at all, even though parsing itself
+        // establishes no trust. An empty verifier is enough to get past the
+        // parse; the trusted certificate source is attached below, only once we
+        // know list data is loaded and are about to run the full validation.
         DetachedTimestampValidator validator;
         TimestampToken parsed;
+        CommonCertificateVerifier verifier = new CommonCertificateVerifier();
         try {
             DSSDocument tokenDocument = new InMemoryDocument(token);
             validator = new DetachedTimestampValidator(tokenDocument);
+            validator.setCertificateVerifier(verifier);
             parsed = validator.getTimestamp();
         } catch (Exception e) {
             log.debug("Token could not be parsed", e);
@@ -142,8 +180,21 @@ public class DssTimestampValidator implements TimestampValidator {
         // issuance does not retroactively qualify them.
         Instant assessmentTime = assessmentOverride != null ? assessmentOverride : genTime;
 
+        // DSS populates isMessageImprintDataFound / isMessageImprintDataIntact
+        // on the token only when matchData is called against the timestamped
+        // content. setTimestampedData alone does not trigger it, so tokenCheck
+        // would otherwise read stale defaults and report a genuine match as
+        // INVALID. This is the check that answers "does this token attest to
+        // this document"; it must run whenever a document or digest is present.
+        boolean imprintChecked = false;
         if (document != null) {
             validator.setTimestampedData(document);
+            try {
+                parsed.matchData(document);
+                imprintChecked = true;
+            } catch (Exception e) {
+                log.debug("Message imprint match could not be performed", e);
+            }
         }
 
         if (!trustedLists.isLoaded()) {
@@ -151,16 +202,14 @@ public class DssTimestampValidator implements TimestampValidator {
                     + "was attempted.");
             return new TimestampValidationResult(
                     genTime,
-                    tokenCheck(parsed, document != null),
+                    tokenCheck(parsed, imprintChecked),
                     new TimestampValidationResult.TrustAssessment(
                             TrustLevel.UNKNOWN, Outcome.INDETERMINATE, null, null),
                     trustedLists.cacheStatus(null),
                     List.copyOf(notes));
         }
 
-        CommonCertificateVerifier verifier = new CommonCertificateVerifier();
         verifier.setTrustedCertSources(trustedLists.certificateSource());
-        validator.setCertificateVerifier(verifier);
         validator.setValidationTime(Date.from(assessmentTime));
 
         Reports reports;
@@ -171,14 +220,14 @@ public class DssTimestampValidator implements TimestampValidator {
             notes.add("The validation process did not complete.");
             return new TimestampValidationResult(
                     genTime,
-                    tokenCheck(parsed, document != null),
+                    tokenCheck(parsed, imprintChecked),
                     new TimestampValidationResult.TrustAssessment(
                             TrustLevel.UNKNOWN, Outcome.INDETERMINATE, null, null),
                     trustedLists.cacheStatus(null),
                     List.copyOf(notes));
         }
 
-        return assemble(parsed, reports, document != null, assessmentTime, genTime, notes);
+        return assemble(parsed, reports, imprintChecked, assessmentTime, genTime, notes);
     }
 
     private TimestampValidationResult assemble(
