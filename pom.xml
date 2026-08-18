@@ -93,6 +93,24 @@
         <artifactId>tomcat-embed-websocket</artifactId>
         <version>10.1.57</version>
       </dependency>
+      <!--
+        DSS fetches the trusted lists over HTTP with Apache HttpComponents, and
+        the version Spring Boot pins, 5.3.6, carries two HIGH severity issues
+        found by the dependency scan: CVE-2026-54399 and CVE-2026-54428. The
+        code path is not the public endpoint but the client that talks to
+        thirty-one government list servers, so the input is remote and not
+        under this project's control either way.
+      -->
+      <dependency>
+        <groupId>org.apache.httpcomponents.core5</groupId>
+        <artifactId>httpcore5</artifactId>
+        <version>5.4.3</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.httpcomponents.core5</groupId>
+        <artifactId>httpcore5-h2</artifactId>
+        <version>5.4.3</version>
+      </dependency>
       <dependency>
         <groupId>ch.qos.logback</groupId>
         <artifactId>logback-classic</artifactId>
