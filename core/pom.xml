@@ -28,6 +28,16 @@
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-tsl-validation</artifactId>
     </dependency>
+    <!--
+      Not pulled in transitively by dss-tsl-validation. Needed at runtime to parse
+      the bundled policy/tsl-constraint.xml into a ValidationPolicy; without it,
+      LOTL and trusted-list signature validation fails with "Unable to load the
+      validation policy for trusted list" and every result comes back unevaluated.
+    -->
+    <dependency>
+      <groupId>eu.europa.ec.joinup.sd-dss</groupId>
+      <artifactId>dss-policy-jaxb</artifactId>
+    </dependency>
     <dependency>
       <groupId>eu.europa.ec.joinup.sd-dss</groupId>
       <artifactId>dss-validation</artifactId>

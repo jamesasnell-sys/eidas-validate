@@ -5,6 +5,7 @@ import eu.europa.esig.dss.model.tsl.TLValidationJobSummary;
 import eu.europa.esig.dss.service.http.commons.CommonsDataLoader;
 import eu.europa.esig.dss.service.http.commons.FileCacheDataLoader;
 import eu.europa.esig.dss.spi.tsl.TrustedListsCertificateSource;
+import eu.europa.esig.dss.spi.x509.KeyStoreCertificateSource;
 import eu.europa.esig.dss.tsl.cache.CacheCleaner;
 import eu.europa.esig.dss.tsl.function.TLPredicateFactory;
 import eu.europa.esig.dss.tsl.job.TLValidationJob;
@@ -14,6 +15,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
@@ -41,9 +45,29 @@ public class TrustedListManager {
     public static final String LOTL_URL =
             "https://ec.europa.eu/tools/lotl/eu-lotl.xml";
 
-    /** Where the Official Journal announces the certificates that sign the list. */
+    /**
+     * Where the Official Journal announces the certificates that sign the list.
+     *
+     * <p>This notice is superseded whenever the Commission publishes a new one; the
+     * current instance is C/2026/1944 (15 April 2026), which replaced OJ C 276
+     * (16 August 2019). Update this constant, and {@link #OJ_LOTL_KEYSTORE_RESOURCE},
+     * together whenever that happens, or the two fall out of sync.
+     */
     public static final String OJ_URL =
-            "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=uriserv:OJ.C_.2019.276.01.0001.01.ENG";
+            "https://eur-lex.europa.eu/eli/C/2026/1944/oj";
+
+    /**
+     * Classpath resource holding the LOTL-signing certificates published in the
+     * annex to {@link #OJ_URL}, as a PKCS12 keystore with no password on the
+     * individual entries. Six certificates as of the current notice.
+     *
+     * <p>This is the trust anchor for the whole chain. Without it, DSS fetches and
+     * parses the lists but has nothing to check their signatures against, and every
+     * validation indication comes back unevaluated rather than PASSED or FAILED.
+     */
+    public static final String OJ_LOTL_KEYSTORE_RESOURCE = "/oj-lotl-keystore.p12";
+
+    private static final String OJ_LOTL_KEYSTORE_PASSWORD = "changeit";
 
     private final TrustedListsCertificateSource certificateSource;
     private final TLValidationJob job;
@@ -64,6 +88,7 @@ public class TrustedListManager {
         LOTLSource lotl = new LOTLSource();
         lotl.setUrl(LOTL_URL);
         lotl.setPivotSupport(true);
+        lotl.setCertificateSource(ojCertificateSource());
 
         // Only timestamping services are retained. The lists carry every kind of
         // qualified trust service, and the rest are weight this service will never
@@ -181,6 +206,31 @@ public class TrustedListManager {
             return a;
         }
         return a.isBefore(b) ? a : b;
+    }
+
+    /**
+     * Loads the OJ-published LOTL-signing certificates that DSS uses to verify
+     * the LOTL's own signature and, going backwards through pivots, the signature
+     * of each preceding LOTL instance.
+     *
+     * <p>Sourced from the annex to {@link #OJ_URL}, not from the LOTL itself or
+     * any third party — trusting the LOTL to supply the certificate that verifies
+     * the LOTL would be circular.
+     */
+    private static KeyStoreCertificateSource ojCertificateSource() {
+        try (InputStream keystoreStream =
+                TrustedListManager.class.getResourceAsStream(OJ_LOTL_KEYSTORE_RESOURCE)) {
+            if (keystoreStream == null) {
+                throw new IllegalStateException(
+                        "OJ LOTL keystore resource not found on classpath: "
+                                + OJ_LOTL_KEYSTORE_RESOURCE);
+            }
+            return new KeyStoreCertificateSource(
+                    keystoreStream, "PKCS12", OJ_LOTL_KEYSTORE_PASSWORD.toCharArray());
+        } catch (IOException e) {
+            throw new UncheckedIOException(
+                    "Failed to load OJ LOTL keystore from " + OJ_LOTL_KEYSTORE_RESOURCE, e);
+        }
     }
 
     private static FileCacheDataLoader offlineLoader(File cacheDirectory) {
