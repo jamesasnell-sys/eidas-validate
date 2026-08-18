@@ -22,6 +22,11 @@ eidas:
     max-age: PT12H
     directory: ${TSL_CACHE_DIR:/tmp/eidas-validate-tsl}
 
+  # Declared as an explicit placeholder rather than left to relaxed binding
+  # from the environment, so that setting it either does what it says or
+  # fails visibly, instead of quietly leaving the default in place.
+  refresh-interval: ${EIDAS_REFRESH_INTERVAL:PT6H}
+
   # Public and unauthenticated, so the limit is applied per origin. Generous
   # enough that a person checking tokens by hand will not meet it.
   rate-limit:

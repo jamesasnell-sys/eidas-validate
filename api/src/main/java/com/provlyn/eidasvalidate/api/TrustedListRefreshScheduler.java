@@ -26,7 +26,16 @@ public class TrustedListRefreshScheduler {
         this.trustedListManager = trustedListManager;
     }
 
-    @Scheduled(fixedRateString = "${eidas.refresh-interval:PT6H}")
+    /**
+     * The first run is deferred by a full interval. {@link ValidationConfig}
+     * already refreshes once at startup, and a schedule that fires immediately
+     * would duplicate it — running the most expensive operation the service
+     * performs twice over, concurrently, on whatever CPU allowance the
+     * instance has.
+     */
+    @Scheduled(
+            fixedRateString = "${eidas.refresh-interval:PT6H}",
+            initialDelayString = "${eidas.refresh-interval:PT6H}")
     public void refresh() {
         ValidationConfig.refreshSafely(trustedListManager, log);
     }

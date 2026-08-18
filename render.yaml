@@ -1,0 +1,38 @@
+# Render blueprint. Committed so the deployment is described in the
+# repository rather than only in a dashboard, and so anyone running their
+# own instance starts from the same configuration.
+services:
+  - type: web
+    name: eidas-validate
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # Starter rather than free, for two reasons that both bear on whether
+    # the service can answer at all. Free instances suspend after fifteen
+    # minutes idle, and free instances cannot mount a persistent disk, so
+    # every wake would begin with no trusted list data and report
+    # indeterminate until a full refresh completed.
+    plan: starter
+    region: frankfurt
+    branch: main
+    healthCheckPath: /actuator/health
+    disk:
+      name: tsl-cache
+      mountPath: /var/data
+      # The cache is around 30 MB. One gigabyte is the smallest size
+      # offered and leaves room for the lists to grow.
+      sizeGB: 1
+    envVars:
+      # Render terminates TLS at a load balancer, so every request reaches
+      # the container from the same address. Without this the rate limiter
+      # treats all callers as one, and the first thirty requests a minute
+      # exhaust the budget for everybody.
+      - key: BEHIND_PROXY
+        value: "true"
+      - key: TSL_CACHE_DIR
+        value: /var/data/tsl-cache
+      # Refresh daily rather than every six hours. Trusted lists change
+      # rarely, a warm refresh against an unchanged set completed in about
+      # four seconds against sixty-two for a cold one, and the result
+      # reports its own age either way.
+      - key: EIDAS_REFRESH_INTERVAL
+        value: PT24H
