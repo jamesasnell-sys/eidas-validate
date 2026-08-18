@@ -1,0 +1,110 @@
+--- # Security scanning, run on the repository itself rather than on any local
+# copy. Three separate things run here because they catch different faults:
+# CodeQL finds vulnerable code paths, the dependency scan finds vulnerable
+# libraries, and the review step blocks a pull request that would introduce
+# either. None of them prove the service is secure. They establish that a
+# specific set of known faults is absent, which is a narrower and more
+# honest claim.
+name: Security
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, because a dependency that was clean when committed does not
+    # stay clean. Most vulnerabilities arrive in code nobody has touched.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    name: CodeQL static analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+          # security-extended adds lower-severity and experimental queries.
+          # Worth the extra noise on a service that parses untrusted binary
+          # input from anonymous callers.
+          queries: security-extended
+
+      - name: Build
+        run: mvn -B -DskipTests package
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:java-kotlin
+
+  dependencies:
+    name: Dependency vulnerabilities
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      # Resolves the full tree, including the DSS dependencies that this
+      # project does not declare directly but does ship.
+      - name: Resolve dependency tree
+        run: mvn -B dependency:tree -DoutputFile=dependency-tree.txt
+
+      - name: Scan for known vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          # Fails the build on anything high or critical. Lower severities
+          # are reported but do not block, so that the signal stays useful.
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+          format: table
+
+      - name: Upload dependency tree
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-tree
+          path: dependency-tree.txt
+
+  dependency-review:
+    name: Dependency review
+    # Only meaningful on a pull request, where there is a base to compare
+    # against. Blocks a change that would add a vulnerable library.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

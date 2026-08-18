@@ -45,6 +45,54 @@
         start with NoSuchMethodError. A directly-declared entry here overrides
         both BOMs regardless of import order.
       -->
+      <!--
+        DSS 6.4 pins BouncyCastle 1.83, which carries known CVEs in exactly the
+        code path this service exposes: parsing attacker-supplied DER. Among
+        those fixed after 1.83 are an unbounded allocation on a definite-length
+        read, an ASN.1 nesting-depth guard that resets, quadratic-time
+        stringification of X.500 names, and CMS signature verification that
+        returns true for SignedData carrying zero signers. An RFC 3161 token is
+        CMS SignedData, so that last one bears directly on whether this service
+        can be trusted to reject a forgery.
+      -->
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcprov-jdk18on</artifactId>
+        <version>1.85</version>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcpkix-jdk18on</artifactId>
+        <version>1.85</version>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcutil-jdk18on</artifactId>
+        <version>1.85</version>
+      </dependency>
+      <!--
+        Spring Boot 3.5.16 pins Tomcat 10.1.55, which is affected by CVEs fixed
+        in 10.1.56 and later. Most concern authorisation constraints and the
+        clustering EncryptInterceptor, neither of which this service uses, so
+        the practical exposure is low. Bumped anyway: the upgrade is free and
+        leaving a known-vulnerable HTTP server in place on a public endpoint
+        needs a better reason than "probably not reachable".
+      -->
+      <dependency>
+        <groupId>org.apache.tomcat.embed</groupId>
+        <artifactId>tomcat-embed-core</artifactId>
+        <version>10.1.57</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.tomcat.embed</groupId>
+        <artifactId>tomcat-embed-el</artifactId>
+        <version>10.1.57</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.tomcat.embed</groupId>
+        <artifactId>tomcat-embed-websocket</artifactId>
+        <version>10.1.57</version>
+      </dependency>
       <dependency>
         <groupId>ch.qos.logback</groupId>
         <artifactId>logback-classic</artifactId>

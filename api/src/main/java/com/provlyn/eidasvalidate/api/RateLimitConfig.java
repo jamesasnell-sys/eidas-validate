@@ -1,5 +1,6 @@
 package com.provlyn.eidasvalidate.api;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -57,6 +58,21 @@ public class RateLimitConfig {
             RateLimiter rateLimiter, RateLimitProperties properties) {
         FilterRegistrationBean<RateLimitFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new RateLimitFilter(rateLimiter, properties.behindProxy()));
+        registration.addUrlPatterns("/api/*");
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
+        return registration;
+    }
+
+    /**
+     * Ordered ahead of the rate limiter. Rejecting an oversized body is the
+     * cheaper check, and doing it first means a large payload is discarded
+     * before anything else touches it.
+     */
+    @Bean
+    public FilterRegistrationBean<RequestSizeFilter> requestSizeFilter(
+            @Value("${eidas.max-request-bytes:65536}") int maxRequestBytes) {
+        FilterRegistrationBean<RequestSizeFilter> registration = new FilterRegistrationBean<>();
+        registration.setFilter(new RequestSizeFilter(maxRequestBytes));
         registration.addUrlPatterns("/api/*");
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return registration;

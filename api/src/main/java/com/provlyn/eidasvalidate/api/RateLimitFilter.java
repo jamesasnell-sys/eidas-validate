@@ -70,21 +70,28 @@ public class RateLimitFilter extends OncePerRequestFilter {
     /**
      * The caller's address.
      *
-     * <p>X-Forwarded-For is only consulted where a trusted proxy is known to be
-     * in front, because the header is set by the client otherwise and would let
-     * anyone present a fresh address per request. Where it is consulted, only
-     * the first entry is taken: a proxy appends, so later entries are whatever
-     * the client sent.
+     * <p>Where a proxy is declared, the <em>last</em> entry in X-Forwarded-For
+     * is used, not the first. Proxies append, so the rightmost entry is the one
+     * this service's own proxy added and is the only one it did not receive
+     * from the caller. Reading the leftmost entry, which is the conventional
+     * way to find the true client address, means reading a value the caller
+     * supplied: anyone could then present a fresh origin on every request and
+     * never meet the limit at all.
+     *
+     * <p>The cost of this choice is that callers sharing a proxy share a
+     * budget. That is the right way to be wrong here. A limit that is
+     * occasionally too strict is a nuisance; a limit that can be sidestepped
+     * by setting a header is not a limit.
      */
     private String callerIdentifier(HttpServletRequest request) {
         if (behindProxy) {
             String forwarded = request.getHeader("X-Forwarded-For");
             if (forwarded != null && !forwarded.isBlank()) {
-                int comma = forwarded.indexOf(',');
-                String first = comma < 0 ? forwarded : forwarded.substring(0, comma);
-                first = first.trim();
-                if (!first.isEmpty()) {
-                    return first;
+                int comma = forwarded.lastIndexOf(',');
+                String last = comma < 0 ? forwarded : forwarded.substring(comma + 1);
+                last = last.trim();
+                if (!last.isEmpty()) {
+                    return last;
                 }
             }
         }
