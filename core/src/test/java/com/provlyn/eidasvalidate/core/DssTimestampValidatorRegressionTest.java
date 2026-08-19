@@ -86,6 +86,40 @@ class DssTimestampValidatorRegressionTest {
     }
 
     /**
+     * A .tsr file, and the tokens embedded in a certificate PDF, are a full
+     * RFC 3161 TimeStampResp: the response with its PKIStatusInfo wrapper, not
+     * the bare TimeStampToken. This is the format timestamp authorities actually
+     * hand out, so the validator must accept it — an earlier version parsed only
+     * the bare token and reported a real .tsr as unparseable bytes.
+     */
+    @Test
+    @DisplayName("a full TimeStampResp (.tsr) is unwrapped and validated, not rejected")
+    void fullResponseIsUnwrapped() throws Exception {
+        TimestampValidationResult r = validator().validate(fixture("genuine-response.tsr"));
+
+        assertNotNull(r.genTime(), "a .tsr carries a generation time once unwrapped");
+        assertEquals(Outcome.VALID, r.token().signature(),
+                "the response wraps a correctly-signed token and must report its signature valid");
+        assertNotNull(r.token().issuerDn(), "the issuer is read from the unwrapped token");
+    }
+
+    /**
+     * The same document, checked against the .tsr rather than the bare token,
+     * must still match. Unwrapping must not disturb the message imprint.
+     */
+    @Test
+    @DisplayName("digest matching a .tsr response reports the imprint valid")
+    void fullResponseImprintMatches() throws Exception {
+        byte[] digest = sha256(fixture("response-document.txt"));
+
+        TimestampValidationResult r =
+                validator().validateDigest(fixture("genuine-response.tsr"), digest, "SHA-256");
+
+        assertEquals(Outcome.VALID, r.token().messageImprint(),
+                "the imprint check must run on the unwrapped token");
+    }
+
+    /**
      * The counterpart to the above. A validator that answers VALID to
      * everything would pass the previous test; this one is what makes the
      * imprint check mean something.

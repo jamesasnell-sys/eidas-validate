@@ -59,7 +59,7 @@ public class RateLimitConfig {
         FilterRegistrationBean<RateLimitFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new RateLimitFilter(rateLimiter, properties.behindProxy()));
         registration.addUrlPatterns("/api/*");
-        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 2);
         return registration;
     }
 
@@ -74,7 +74,9 @@ public class RateLimitConfig {
         FilterRegistrationBean<RequestSizeFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new RequestSizeFilter(maxRequestBytes));
         registration.addUrlPatterns("/api/*");
-        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        // After CORS (which Spring registers at HIGHEST_PRECEDENCE) so a browser
+        // preflight is answered before any body-size or rate check runs.
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
         return registration;
     }
 }

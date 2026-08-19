@@ -15,6 +15,9 @@ import eu.europa.esig.dss.spi.validation.CommonCertificateVerifier;
 import eu.europa.esig.dss.spi.x509.tsp.TimestampToken;
 import eu.europa.esig.dss.validation.reports.Reports;
 import eu.europa.esig.dss.validation.timestamp.DetachedTimestampValidator;
+import org.bouncycastle.asn1.ASN1Primitive;
+import org.bouncycastle.asn1.cmp.PKIStatusInfo;
+import org.bouncycastle.asn1.tsp.TimeStampResp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -132,6 +135,35 @@ public class DssTimestampValidator implements TimestampValidator {
         };
     }
 
+    /**
+     * Returns the bare TimeStampToken bytes.
+     *
+     * <p>A .tsr file, and the tokens a certificate PDF embeds, are a full
+     * RFC 3161 TimeStampResp: a SEQUENCE of a PKIStatusInfo and the token
+     * itself. DSS's validator wants the token, not the response, so if a
+     * response was supplied this unwraps it and returns the token's own
+     * encoding. Anything that is not a well-formed response — including a bare
+     * token — is returned unchanged, so the existing parse still runs and still
+     * reports its own error if the bytes are genuinely not a token.
+     */
+    private static byte[] unwrapTimeStampResp(byte[] input) {
+        try {
+            TimeStampResp resp = TimeStampResp.getInstance(ASN1Primitive.fromByteArray(input));
+            PKIStatusInfo status = resp.getStatus();
+            // status 0 = granted, 1 = grantedWithMods. Anything else is a
+            // rejection carrying no usable token, so leave the bytes as they are
+            // and let the normal parse report the failure.
+            int code = status.getStatus().intValue();
+            if ((code == 0 || code == 1) && resp.getTimeStampToken() != null) {
+                return resp.getTimeStampToken().getEncoded("DER");
+            }
+        } catch (Exception e) {
+            // Not a TimeStampResp — very likely already a bare token. Fall
+            // through and let the caller parse the original bytes.
+        }
+        return input;
+    }
+
     @Override
     public TimestampValidationResult validateAsAt(byte[] token, byte[] document, Instant assessmentTime) {
         return run(token, document == null ? null : new InMemoryDocument(document), assessmentTime);
@@ -153,7 +185,15 @@ public class DssTimestampValidator implements TimestampValidator {
         TimestampToken parsed;
         CommonCertificateVerifier verifier = new CommonCertificateVerifier();
         try {
-            DSSDocument tokenDocument = new InMemoryDocument(token);
+            // A .tsr file, and the tokens embedded in a certificate PDF, are a
+            // full RFC 3161 TimeStampResp: the response with its status wrapper,
+            // not the bare TimeStampToken. DSS parses the token, so unwrap first
+            // if a response was supplied. A bare token is passed through
+            // unchanged. This is what lets the tool work on the file format the
+            // authorities actually hand out, rather than only on a token someone
+            // has already extracted.
+            byte[] tokenBytes = unwrapTimeStampResp(token);
+            DSSDocument tokenDocument = new InMemoryDocument(tokenBytes);
             validator = new DetachedTimestampValidator(tokenDocument);
             validator.setCertificateVerifier(verifier);
             parsed = validator.getTimestamp();
