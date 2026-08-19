@@ -1,7 +1,14 @@
 # Render blueprint. Committed so the deployment is described in the
 # repository rather than only in a dashboard, and so anyone running their
 # own instance starts from the same configuration.
+#
+# Two services from one repository: production tracks main, staging tracks
+# the staging branch. They are otherwise identical, so staging is a faithful
+# rehearsal of production rather than an approximation. A change is proven on
+# staging first, then merged to main, which is the only thing that moves
+# production.
 services:
+  # --- Production -------------------------------------------------------
   - type: web
     name: eidas-validate
     runtime: docker
@@ -34,5 +41,29 @@ services:
       # rarely, a warm refresh against an unchanged set completed in about
       # four seconds against sixty-two for a cold one, and the result
       # reports its own age either way.
+      - key: EIDAS_REFRESH_INTERVAL
+        value: PT24H
+
+  # --- Staging ----------------------------------------------------------
+  # Identical to production in every setting that affects behaviour, so a
+  # problem shows here before it reaches anyone. Its own name and its own
+  # disk, so the two never share state.
+  - type: web
+    name: eidas-validate-staging
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: frankfurt
+    branch: staging
+    healthCheckPath: /actuator/health
+    disk:
+      name: tsl-cache-staging
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: BEHIND_PROXY
+        value: "true"
+      - key: TSL_CACHE_DIR
+        value: /var/data/tsl-cache
       - key: EIDAS_REFRESH_INTERVAL
         value: PT24H
